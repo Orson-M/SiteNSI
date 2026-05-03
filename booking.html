@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Book Your Launch - Kerbal AeroTours</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page">
+    <header>
+      <a href="mainpage.html" class="brand"><span>K</span>Kerbal AeroTours</a>
+      <nav>
+        <a href="mainpage.html#destinations">Launches</a>
+        <a href="mainpage.html#experience">Training</a>
+        <a href="mainpage.html#contact">Flight Control</a>
+      </nav>
+    </header>
+
+    <main>
+      <section id="booking">
+        <div class="booking-container">
+          <h1>Book Your Kerbal Launch</h1>
+          <p>Reserve your seat on the next mission to the stars.</p>
+
+          <form id="booking-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="name">Full Name</label>
+                <input type="text" id="name" name="name" required>
+              </div>
+
+              <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" name="email" required>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="destination">Destination</label>
+                <select id="destination" name="destination" required>
+                  <option value="">Select Destination</option>
+                  <option value="Kerbal Space Station">Kerbal Space Station</option>
+                  <option value="Minmus">Minmus</option>
+                  <option value="Jool System">Jool System</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>Travel dates</label>
+                <div class="calendar-container" id="calendar-container" aria-label="Date selector"></div>
+                <p id="date-schedule" class="date-info">Select a destination to reveal the booking calendar, then choose departure and return dates.</p>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="departure-date">Departure Date</label>
+                <input type="text" id="departure-date" name="launch-date" readonly required placeholder="Choose a date on the calendar">
+              </div>
+              <div class="form-group">
+                <label for="return-date">Return Date</label>
+                <input type="text" id="return-date" name="return-date" readonly required placeholder="Choose a return date on the calendar">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="passengers">Number of Passengers</label>
+              <input type="number" id="passengers" name="passengers" min="1" max="10" value="1" required>
+            </div>
+
+            <div class="form-group">
+              <label for="requests">Special Requests</label>
+              <textarea id="requests" name="requests" rows="4" placeholder="Any special accommodations or notes..."></textarea>
+            </div>
+
+            <p id="form-error" class="form-error" aria-live="polite"></p>
+            <button type="submit" class="button">Submit Reservation</button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const bookingForm = document.getElementById('booking-form');
+      const destinationField = document.getElementById('destination');
+      const calendarContainer = document.getElementById('calendar-container');
+      const departureDateField = document.getElementById('departure-date');
+      const returnDateField = document.getElementById('return-date');
+      const dateSchedule = document.getElementById('date-schedule');
+      const formError = document.getElementById('form-error');
+
+      let selectedDeparture = null;
+      let selectedReturn = null;
+      let allowedDepartureDates = new Set();
+      let allowedReturnDates = new Set();
+
+      const scheduleRules = {
+        'Kerbal Space Station': {
+          label: 'Space Station departures are available every day.',
+          generate: (start) => generateDates(start, 14, 1),
+          validate: () => true,
+          minReturnDays: 0
+        },
+        'Minmus': {
+          label: 'Minmus flights operate every 2 days.',
+          generate: (start) => generateDates(start, 8, 2),
+          validate: (date) => date.isValid && date.offset % 2 === 0,
+          minReturnDays: 2
+        },
+        'Jool System': {
+          label: 'Jool launches run on a 3-week cycle with two launch days.',
+          generate: (start) => generateJoolWindows(start, 6),
+          validate: (date) => date.isValid && [0, 1].includes(date.offset % 21),
+          minReturnDays: 21
+        }
+      };
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      function formatDate(date) {
+        return date.toISOString().split('T')[0];
+      }
+
+      function addDays(date, days) {
+        const next = new Date(date);
+        next.setDate(next.getDate() + days);
+        return next;
+      }
+
+      function getDateInfo(dateString) {
+        const target = new Date(dateString);
+        target.setHours(0, 0, 0, 0);
+        const offset = Math.round((target - today) / 86400000);
+        return { target, offset, isValid: offset >= 0 };
+      }
+
+      function generateDates(start, count, step) {
+        const dates = [];
+        for (let i = 0; i < count; i += 1) {
+          const date = addDays(start, i * step);
+          dates.push(formatDate(date));
+        }
+        return dates;
+      }
+
+      function generateJoolWindows(start, weeks) {
+        const dates = [];
+        const daysToGenerate = weeks * 21;
+        for (let i = 0; i < daysToGenerate; i += 1) {
+          if ([0, 1].includes(i % 21)) {
+            dates.push(formatDate(addDays(start, i)));
+          }
+        }
+        return dates;
+      }
+
+      function getAllowedDepartureDates(dest) {
+        return new Set(scheduleRules[dest].generate(today));
+      }
+
+      function getAllowedReturnDates(departureDate, dest) {
+        const rule = scheduleRules[dest];
+        const dep = new Date(departureDate);
+        const minReturn = addDays(dep, rule.minReturnDays);
+        return new Set(generateDates(minReturn, 14, 1));
+      }
+
+      function renderCalendar() {
+        calendarContainer.innerHTML = '';
+
+        if (!destinationField.value) {
+          calendarContainer.innerHTML = '<div class="flight-placeholder">Select a destination to see available flights.</div>';
+          return;
+        }
+
+        const months = [
+          new Date(today.getFullYear(), today.getMonth(), 1),
+          new Date(today.getFullYear(), today.getMonth() + 1, 1)
+        ];
+
+        months.forEach((monthDate) => {
+          const monthCard = document.createElement('div');
+          monthCard.className = 'calendar-month';
+          monthCard.innerHTML = `
+            <div class="calendar-header">
+              <strong>${monthDate.toLocaleString('default', { month: 'long' })} ${monthDate.getFullYear()}</strong>
+            </div>
+          `;
+
+          const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+          const weekdayRow = document.createElement('div');
+          weekdayRow.className = 'calendar-weekdays';
+          weekdays.forEach((day) => {
+            const cell = document.createElement('div');
+            cell.className = 'calendar-weekday';
+            cell.textContent = day;
+            weekdayRow.appendChild(cell);
+          });
+          monthCard.appendChild(weekdayRow);
+
+          const grid = document.createElement('div');
+          grid.className = 'calendar-grid';
+
+          const startWeekday = (new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).getDay() + 6) % 7;
+          const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+
+          for (let i = 0; i < startWeekday; i += 1) {
+            const emptyCell = document.createElement('div');
+            emptyCell.className = 'calendar-day empty';
+            grid.appendChild(emptyCell);
+          }
+
+          for (let day = 1; day <= daysInMonth; day += 1) {
+            const date = new Date(monthDate.getFullYear(), monthDate.getMonth(), day);
+            const dateKey = formatDate(date);
+            const cell = document.createElement('button');
+            cell.type = 'button';
+            cell.className = 'calendar-day';
+            cell.textContent = day;
+            const isDeparture = allowedDepartureDates.has(dateKey);
+            const isReturn = selectedDeparture && allowedReturnDates.has(dateKey);
+            const departureSelected = selectedDeparture === dateKey;
+            const returnSelected = selectedReturn === dateKey;
+            const inRange = selectedDeparture && selectedReturn && dateKey >= selectedDeparture && dateKey <= selectedReturn;
+
+            if (!isDeparture && !isReturn) {
+              cell.classList.add('disabled');
+              cell.disabled = true;
+            }
+
+            if (departureSelected) cell.classList.add('departure');
+            if (returnSelected) cell.classList.add('return');
+            if (inRange && !departureSelected && !returnSelected) cell.classList.add('range');
+
+            cell.addEventListener('click', () => handleCalendarClick(dateKey));
+            grid.appendChild(cell);
+          }
+
+          monthCard.appendChild(grid);
+          calendarContainer.appendChild(monthCard);
+        });
+      }
+
+      function handleCalendarClick(dateKey) {
+        if (!selectedDeparture || (selectedDeparture && selectedReturn)) {
+          if (!allowedDepartureDates.has(dateKey)) return;
+          selectedDeparture = dateKey;
+          selectedReturn = null;
+          allowedReturnDates = getAllowedReturnDates(selectedDeparture, destinationField.value);
+          dateSchedule.textContent = `${scheduleRules[destinationField.value].label} Now pick a return date from the highlighted range.`;
+        } else if (selectedDeparture && !selectedReturn) {
+          if (!allowedReturnDates.has(dateKey)) {
+            if (allowedDepartureDates.has(dateKey)) {
+              selectedDeparture = dateKey;
+              selectedReturn = null;
+              allowedReturnDates = getAllowedReturnDates(selectedDeparture, destinationField.value);
+              dateSchedule.textContent = `${scheduleRules[destinationField.value].label} Now pick a return date from the highlighted range.`;
+            }
+            return;
+          }
+          selectedReturn = dateKey;
+        }
+
+        updateSelectedDates();
+        renderCalendar();
+      }
+
+      function updateSelectedDates() {
+        departureDateField.value = selectedDeparture || '';
+        returnDateField.value = selectedReturn || '';
+      }
+
+      function populateFlightOptions() {
+        const dest = destinationField.value;
+        selectedDeparture = null;
+        selectedReturn = null;
+        allowedDepartureDates = new Set();
+        allowedReturnDates = new Set();
+        updateSelectedDates();
+
+        if (!dest) {
+          calendarContainer.innerHTML = '<div class="flight-placeholder">Select a destination to see available flights.</div>';
+          dateSchedule.textContent = 'Select a destination to see available launch dates.';
+          return;
+        }
+
+        allowedDepartureDates = getAllowedDepartureDates(dest);
+        renderCalendar();
+        dateSchedule.textContent = `${scheduleRules[dest].label} Choose a departure date on the calendar.`;
+      }
+
+      function validateSelectedDate() {
+        const dest = destinationField.value;
+        const depValue = departureDateField.value;
+        const retValue = returnDateField.value;
+        if (!dest || !depValue || !retValue) return false;
+
+        const depInfo = getDateInfo(depValue);
+        const retInfo = getDateInfo(retValue);
+        if (!depInfo.isValid || !retInfo.isValid || retInfo.offset <= depInfo.offset) return false;
+
+        return scheduleRules[dest].validate(depInfo);
+      }
+
+      destinationField.addEventListener('change', () => {
+        populateFlightOptions();
+        formError.textContent = '';
+      });
+
+      bookingForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        formError.textContent = '';
+
+        if (!bookingForm.checkValidity()) {
+          formError.textContent = 'Please complete every required field before continuing.';
+          return;
+        }
+
+        if (!validateSelectedDate()) {
+          formError.textContent = 'Please choose valid departure and return flights. Return date must be after departure.';
+          return;
+        }
+
+        window.location.href = 'thankyou.html';
+      });
+    </script>
+    </main>
+  </div>
+</body>
+</html>
